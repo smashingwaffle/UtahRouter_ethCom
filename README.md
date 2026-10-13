@@ -7,6 +7,10 @@ Cerebrum ──TCP (Utah RCP-1, Ethernet)──▶ Utah eth2RS422 ──RS-422�
                                          http://localhost:8422
 ```
 
+![Utah eth2RS422 web UI](docs/screenshot.png)
+
+Project page: https://smasher.be/tools/utah-eth2rs422/
+
 ## Why this exists
 
 Connected straight to the SC-40 over a USB RS-422 adapter, Cerebrum's *Utah RCP-1* driver worked but kept dropping the link every one to five minutes (Active → No Connection → "No Connection Active" → Active). Testing showed:
