@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Utah eth2RS422</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23101418'/%3E%3Cpath d='M6 11h8M6 16h8M6 21h8M18 11h8M18 16h8M18 21h8' stroke='%23f2a531' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0d1014; --panel:#151a20; --panel2:#1b2128; --line:#262e37; --text:#e6e9ec;
+  --muted:#8a95a1; --faint:#5b6672; --amber:#f2a531; --green:#3ccf7a; --red:#ef5a5a;
+  --blue:#5aa9ef; --violet:#b48cf2; --mono:"Cascadia Mono","Consolas","SFMono-Regular",Menlo,monospace;
+  --sans:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 var(--sans)}
+button,input,select{font:inherit;color:inherit}
+header{display:flex;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#12171d,#0d1014)}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand h1{margin:0;font-size:19px;letter-spacing:.3px;font-weight:650}
+.brand h1 b{color:var(--amber);font-weight:650}
+.brand small{color:var(--faint);font-family:var(--mono);font-size:12px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;
+  border:1px solid var(--line);background:var(--panel);font-weight:600;font-size:13px}
+.led{width:9px;height:9px;border-radius:50%;background:var(--faint);flex:none}
+.led.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+.led.bad{background:var(--red);box-shadow:0 0 8px var(--red)}
+.led.warn{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.btn{border:1px solid var(--line);background:var(--panel2);padding:7px 14px;border-radius:7px;cursor:pointer;font-weight:600}
+.btn:hover{border-color:#3a4552}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#1a1205}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{background:#3a1717;border-color:#5a2323;color:#ffb4b4}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.sm{padding:4px 10px;font-size:12.5px}
+main{padding:18px 22px 28px;display:grid;gap:18px;max-width:1500px;margin:0 auto}
+
+/* signal path */
+.path{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:0;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.node{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.node .t{display:flex;align-items:center;gap:8px;font-weight:650}
+.node .s{color:var(--muted);font-family:var(--mono);font-size:12.5px;margin-top:4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.link{display:flex;flex-direction:column;align-items:center;padding:0 10px;min-width:120px}
+.link .wire{height:2px;width:100%;background:var(--line);position:relative;overflow:hidden;border-radius:2px}
+.link.live .wire{background:#2d4a39}
+.link.live .wire::after{content:"";position:absolute;inset:0;width:30%;
+  background:linear-gradient(90deg,transparent,var(--green),transparent);animation:flow 1.4s linear infinite}
+@keyframes flow{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+.link .lbl{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:6px 0 0}
+.link .lbl.top{margin:0 0 6px}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.tile .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
+.tile .v{font-family:var(--mono);font-size:22px;margin-top:4px;font-variant-numeric:tabular-nums}
+.tile .v small{font-size:12px;color:var(--muted);margin-left:4px}
+.tile.alert .v{color:var(--red)}
+
+/* columns */
+.cols{display:grid;grid-template-columns:420px minmax(0,1fr);gap:18px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.card h2{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:650}
+.card .hd{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
+.card .bd{padding:14px 16px}
+fieldset{border:0;margin:0 0 16px;padding:0}
+legend{font-size:12px;color:var(--amber);font-weight:650;letter-spacing:.6px;text-transform:uppercase;margin-bottom:8px;padding:0}
+.row{display:grid;grid-template-columns:130px minmax(0,1fr);align-items:center;gap:10px;margin-bottom:8px}
+.row label{color:var(--muted);font-size:13px}
+.row .ctl{display:flex;gap:6px;min-width:0}
+input[type=text],input[type=number],select{width:100%;min-width:0;background:var(--bg);border:1px solid var(--line);
+  border-radius:7px;padding:6px 9px;outline:none}
+input:focus,select:focus{border-color:var(--amber)}
+.trio{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:6px;min-width:0}
+.check{display:flex;align-items:flex-start;gap:9px;margin:8px 0;cursor:pointer}
+.check input{margin-top:3px;accent-color:var(--amber)}
+.check span small{display:block;color:var(--faint);font-size:12px}
+.savebar{display:flex;align-items:center;gap:10px;padding-top:6px}
+.savebar .msg{font-size:12.5px;color:var(--muted)}
+.savebar .msg.err{color:var(--red)}
+.savebar .msg.dirty{color:var(--amber)}
+.hint{font-size:12px;color:var(--faint);margin:2px 0 0 140px}
+
+/* log */
+.logtools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer;color:var(--muted)}
+.chip.on{color:var(--text);border-color:#4a5562;background:var(--panel2)}
+.log{height:560px;overflow:auto;font-family:var(--mono);font-size:12.5px;padding:6px 0}
+.ev{display:grid;grid-template-columns:96px 92px minmax(0,1fr);gap:10px;padding:2px 16px;white-space:nowrap}
+.ev:hover{background:#192028}
+.ev .ts{color:var(--faint)}
+.ev .kd{font-weight:600}
+.ev .tx{overflow:hidden;text-overflow:ellipsis}
+.ev .hx{color:var(--faint);margin-left:10px}
+.k-take .kd{color:var(--amber)} .k-take .tx{color:#ffd79a}
+.k-unsolicited .kd{color:var(--violet)}
+.k-error .kd,.k-error .tx{color:var(--red)}
+.k-warn .kd{color:var(--amber)}
+.k-info .kd{color:var(--blue)}
+.k-test .kd{color:var(--green)}
+.k-poll .kd,.k-reply .kd{color:var(--faint)} .k-poll .tx,.k-reply .tx{color:var(--muted)}
+.empty{color:var(--faint);padding:30px 16px;text-align:center;font-family:var(--sans)}
+.testbox{display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+.testbox input{width:80px}
+.testbox .res{font-family:var(--mono);font-size:12.5px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.testbox .res.ok{color:var(--green)} .testbox .res.bad{color:var(--red)}
+footer{color:var(--faint);font-size:12px;font-family:var(--mono);display:flex;gap:22px;flex-wrap:wrap;padding:0 2px;overflow-wrap:anywhere;min-width:0}
+.err-banner{display:none;background:#2a1414;border:1px solid #5a2323;color:#ffc2c2;border-radius:10px;padding:10px 14px}
+
+@media (max-width:1100px){
+  .cols{grid-template-columns:1fr}
+  .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:720px){
+  header{flex-wrap:wrap;padding:12px 16px}
+  main{padding:14px 16px}
+  .path{grid-template-columns:1fr;gap:6px}
+  .link{min-width:0;flex-direction:row;gap:8px}
+  .link .wire{height:18px;width:2px}
+  .link .lbl{margin:0}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .row{grid-template-columns:1fr}
+  .hint{margin-left:0}
+  .ev{grid-template-columns:80px minmax(0,1fr)} .ev .kd{display:none}
+  .testbox .res{white-space:normal;flex-basis:100%}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><h1>Utah <b>eth2RS422</b></h1><small id="ver"></small></div>
+  <div class="spacer"></div>
+  <span class="pill"><span class="led" id="runLed"></span><span id="runTxt">Connecting…</span></span>
+  <button class="btn primary" id="startBtn">Start</button>
+  <button class="btn danger" id="stopBtn">Stop</button>
+</header>
+
+<main>
+  <div class="err-banner" id="uiErr">Lost contact with the bridge application. Is it still running?</div>
+
+  <section class="path" aria-label="Signal path">
+    <div class="node">
+      <div class="t"><span class="led" id="cliLed"></span>Cerebrum</div>
+      <div class="s" id="cliTxt">waiting for connection</div>
+    </div>
+    <div class="link" id="netLink"><div class="lbl top">Ethernet · RCP-1</div><div class="wire"></div><div class="lbl" id="netLbl">tcp —</div></div>
+    <div class="node">
+      <div class="t"><span class="led" id="brLed"></span>eth2RS422</div>
+      <div class="s" id="brTxt">stopped</div>
+    </div>
+    <div class="link" id="serLink"><div class="lbl top">RS-422</div><div class="wire"></div><div class="lbl" id="serLbl">—</div></div>
+    <div class="node">
+      <div class="t"><span class="led" id="serLed"></span>Utah SC-40</div>
+      <div class="s" id="serTxt">serial closed</div>
+    </div>
+  </section>
+
+  <section class="tiles">
+    <div class="tile"><div class="k">Polls / s</div><div class="v" id="tPps">0</div></div>
+    <div class="tile"><div class="k">Router latency</div><div class="v" id="tLat">—</div></div>
+    <div class="tile"><div class="k">Takes</div><div class="v" id="tTakes">0</div></div>
+    <div class="tile"><div class="k">Unsolicited</div><div class="v" id="tUns">0</div></div>
+    <div class="tile" id="errTile"><div class="k">Errors</div><div class="v" id="tErr">0</div></div>
+    <div class="tile"><div class="k">Uptime</div><div class="v" id="tUp">—</div></div>
+  </section>
+
+  <section class="cols">
+    <div class="card">
+      <div class="hd"><h2>Settings</h2></div>
+      <form class="bd" id="cfgForm" autocomplete="off">
+        <fieldset>
+          <legend>Serial · Utah SC-40</legend>
+          <div class="row"><label for="serial_port">COM port</label>
+            <div class="ctl"><select id="serial_port" name="serial_port"></select>
+            <button type="button" class="btn sm" id="scanBtn" title="Rescan ports">Scan</button></div></div>
+          <div class="row"><label for="baudrate">Baud rate</label>
+            <div class="ctl"><select id="baudrate" name="baudrate">
+              <option>1200</option><option>2400</option><option>4800</option><option>9600</option>
+              <option>19200</option><option>38400</option><option>57600</option><option>115200</option>
+            </select></div></div>
+          <div class="row"><label>Data · parity · stop</label>
+            <div class="trio">
+              <select id="bytesize" name="bytesize" aria-label="Data bits"><option>7</option><option>8</option></select>
+              <select id="parity" name="parity" aria-label="Parity"><option value="N">None</option><option value="E">Even</option><option value="O">Odd</option></select>
+              <select id="stopbits" name="stopbits" aria-label="Stop bits"><option value="1">1</option><option value="2">2</option></select>
+            </div></div>
+          <div class="hint">SC-40 Serial 2 on this system: 19200 · 8 · None · 1</div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Network · Cerebrum side</legend>
+          <div class="row"><label for="listen_host">Listen on IP</label>
+            <div class="ctl"><select id="listen_host" name="listen_host"></select></div></div>
+          <div class="row"><label for="listen_port">TCP port</label>
+            <div class="ctl"><input type="number" id="listen_port" name="listen_port" min="1" max="65535"></div></div>
+          <div class="hint">Cerebrum: Utah RCP-1 · Ethernet · this PC's IP · same port</div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Behaviour</legend>
+          <label class="check"><input type="checkbox" id="frame_mode" name="frame_mode">
+            <span>Forward complete RCP-1 reports only<small>Keeps Cerebrum's RCP-1 driver from dropping the link. Leave on.</small></span></label>
+          <label class="check"><input type="checkbox" id="one_based" name="one_based">
+            <span>Show numbers 1-based<small>Matches Cerebrum and Utah panels (router itself is 0-based).</small></span></label>
+          <label class="check"><input type="checkbox" id="autostart" name="autostart">
+            <span>Start bridge when the app opens</span></label>
+          <div class="row" style="margin-top:10px"><label for="log_detail">Log detail</label>
+            <div class="ctl"><select id="log_detail" name="log_detail">
+              <option value="normal">Takes, router reports, events</option>
+              <option value="all">Everything (every poll — very busy)</option>
+            </select></div></div>
+          <label class="check"><input type="checkbox" id="log_to_file" name="log_to_file">
+            <span>Write daily log files<small id="logDirTxt"></small></span></label>
+        </fieldset>
+
+        <div class="savebar">
+          <button type="submit" class="btn primary" id="saveBtn">Save &amp; apply</button>
+          <button type="button" class="btn" id="revertBtn">Revert</button>
+          <span class="msg" id="saveMsg"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="hd">
+        <h2>Activity</h2>
+        <div class="spacer"></div>
+        <div class="logtools" id="chips">
+          <button class="chip on" data-f="all">All</button>
+          <button class="chip" data-f="take">Takes</button>
+          <button class="chip" data-f="unsolicited">Router</button>
+          <button class="chip" data-f="sys">Events</button>
+          <button class="chip" data-f="err">Problems</button>
+        </div>
+        <button class="btn sm" id="pauseBtn">Pause</button>
+        <button class="btn sm" id="clearBtn">Clear</button>
+      </div>
+      <div class="log" id="log"><div class="empty" id="logEmpty">No activity yet.</div></div>
+      <div class="testbox">
+        <span style="color:var(--muted);font-size:13px">Test router: query destination</span>
+        <input type="number" id="testDst" value="1" min="0" max="320">
+        <button class="btn sm" id="testBtn">Query</button>
+        <span class="res" id="testRes" title="">Only available while Cerebrum is not connected.</span>
+      </div>
+    </div>
+  </section>
+
+  <footer><span id="cfgPath"></span><span>Reset counters: <a href="#" id="resetStats" style="color:var(--muted)">reset</a></span></footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let cfg = null, dirty = false, lastSeq = 0, paused = false, filter = "all", lastState = null;
+const FIELDS = ["serial_port","baudrate","bytesize","parity","stopbits","listen_host","listen_port",
+                "frame_mode","one_based","autostart","log_detail","log_to_file"];
+const KIND_LABEL = {take:"TAKE",unsolicited:"ROUTER",poll:"poll",reply:"reply",info:"info",warn:"warn",error:"ERROR",test:"test",other:"other"};
+
+async function api(path, body){
+  const opt = body === undefined ? {} : {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)};
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function setOptions(sel, items, current){
+  const keep = current ?? sel.value;
+  sel.innerHTML = "";
+  for(const it of items){
+    const o = document.createElement("option");
+    o.value = it.value; o.textContent = it.label; sel.appendChild(o);
+  }
+  if(keep && ![...sel.options].some(o=>o.value==keep)){
+    const o = document.createElement("option"); o.value = keep; o.textContent = keep + " (not found)"; sel.appendChild(o);
+  }
+  if(keep) sel.value = keep;
+}
+
+async function loadPorts(){
+  try{
+    const {ports} = await api("/api/ports");
+    setOptions($("serial_port"), ports.map(p=>({value:p.device,label:p.description && p.description!==p.device ? `${p.device} — ${p.description}` : p.device})),
+               dirty ? $("serial_port").value : cfg?.serial_port);
+  }catch(e){}
+}
+async function loadIps(){
+  try{
+    const {ips} = await api("/api/interfaces");
+    setOptions($("listen_host"), ips.map(ip=>({value:ip,label: ip==="0.0.0.0" ? "0.0.0.0 — all interfaces" : ip==="127.0.0.1" ? "127.0.0.1 — this PC only" : ip})),
+               dirty ? $("listen_host").value : cfg?.listen_host);
+  }catch(e){}
+}
+
+function fillForm(c){
+  for(const k of FIELDS){
+    const el = $(k); if(!el) continue;
+    if(el.type==="checkbox") el.checked = !!c[k];
+    else el.value = String(c[k] === 1.0 && k==="stopbits" ? 1 : c[k]);
+  }
+  if(![...$("serial_port").options].some(o=>o.value==c.serial_port)) loadPorts();
+  setDirty(false);
+}
+function readForm(){
+  const o = {};
+  for(const k of FIELDS){
+    const el = $(k);
+    o[k] = el.type==="checkbox" ? el.checked : el.value;
+  }
+  return o;
+}
+function setDirty(d){
+  dirty = d;
+  const m = $("saveMsg");
+  m.className = "msg" + (d ? " dirty" : "");
+  m.textContent = d ? "Unsaved changes" : "";
+}
+
+function fmtUp(s){
+  if(!s) return "—";
+  const h = Math.floor(s/3600), m = Math.floor(s%3600/60), sec = s%60;
+  return h ? `${h}h ${String(m).padStart(2,"0")}m` : m ? `${m}m ${String(sec).padStart(2,"0")}s` : `${sec}s`;
+}
+function led(el, state){ el.className = "led" + (state ? " "+state : ""); }
+
+function renderState(s){
+  lastState = s;
+  const st = s.status, c = s.config;
+  $("ver").textContent = "v" + s.version;
+  $("cfgPath").textContent = "Config: " + s.config_path;
+  $("logDirTxt").textContent = s.log_dir;
+  if(!cfg){ cfg = c; fillForm(c); loadPorts(); loadIps(); }
+  cfg = c;
+
+  const running = st.running;
+  const healthy = running && st.serial_ok && st.server_ok;
+  led($("runLed"), running ? (healthy ? "ok" : "warn") : "");
+  $("runTxt").textContent = !running ? "Stopped" : healthy ? (st.client ? "Bridging" : "Ready") : "Running — check errors";
+  $("startBtn").disabled = running; $("stopBtn").disabled = !running;
+
+  led($("cliLed"), st.client ? "ok" : running ? "warn" : "");
+  $("cliTxt").textContent = st.client ? st.client : running ? "waiting for connection" : "—";
+  led($("brLed"), running ? (healthy ? "ok" : "warn") : "");
+  $("brTxt").textContent = running ? (st.server_ok ? `listening ${c.listen_host}:${c.listen_port}` : (st.server_error || "starting…")) : "stopped";
+  led($("serLed"), st.serial_ok ? "ok" : running ? "bad" : "");
+  $("serTxt").textContent = st.serial_ok ? `${c.serial_port} open` : (running ? (st.serial_error || "opening…") : "serial closed");
+  $("netLbl").textContent = `tcp ${c.listen_port}`;
+  $("serLbl").textContent = `${c.serial_port} · ${c.baudrate} ${c.bytesize}${c.parity}${Number(c.stopbits)}`;
+  $("netLink").classList.toggle("live", !!st.client && running);
+  $("serLink").classList.toggle("live", st.serial_ok && st.polls_per_sec > 0);
+
+  const x = st.stats;
+  $("tPps").textContent = st.polls_per_sec;
+  $("tLat").innerHTML = x.latency_avg_ms == null ? "—" : `${x.latency_avg_ms}<small>ms</small>`;
+  $("tTakes").textContent = x.takes;
+  $("tUns").textContent = x.unsolicited;
+  const errs = x.bad_checksum + x.serial_errors + x.dropped_no_serial;
+  $("tErr").textContent = errs;
+  $("errTile").classList.toggle("alert", errs > 0);
+  $("tUp").textContent = fmtUp(st.uptime_s);
+
+  const t = st.test, r = $("testRes");
+  if(t){ r.textContent = t.text; r.title = t.hex; r.className = "res " + (t.ok ? "ok" : "bad"); }
+  $("testBtn").disabled = !st.serial_ok || !!st.client;
+}
+
+function matches(ev){
+  if(filter==="all") return true;
+  if(filter==="sys") return ["info","warn","error","test"].includes(ev.kind);
+  if(filter==="err") return ["warn","error"].includes(ev.kind);
+  return ev.kind===filter;
+}
+function evRow(ev){
+  const d = document.createElement("div");
+  d.className = "ev k-" + ev.kind;
+  d.dataset.kind = ev.kind;
+  const t = new Date(ev.t*1000);
+  const ts = t.toLocaleTimeString([], {hour12:false}) + "." + String(t.getMilliseconds()).padStart(3,"0");
+  d.innerHTML = `<span class="ts"></span><span class="kd"></span><span class="tx"></span>`;
+  d.children[0].textContent = ts;
+  d.children[1].textContent = KIND_LABEL[ev.kind] || ev.kind;
+  d.children[2].textContent = ev.text;
+  if(ev.hex){ const h = document.createElement("span"); h.className="hx"; h.textContent = ev.hex; d.children[2].appendChild(h); }
+  d.title = ev.hex || "";
+  if(!matches(ev)) d.style.display = "none";
+  return d;
+}
+function applyFilter(){
+  for(const r of $("log").querySelectorAll(".ev")) r.style.display = matches({kind:r.dataset.kind}) ? "" : "none";
+}
+
+async function pollEvents(){
+  if(paused) return;
+  try{
+    const {events, last} = await api("/api/events?since=" + lastSeq);
+    if(last < lastSeq){ lastSeq = 0; $("log").querySelectorAll(".ev").forEach(e=>e.remove()); return; }
+    if(!events.length) return;
+    const log = $("log");
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    $("logEmpty").style.display = "none";
+    const frag = document.createDocumentFragment();
+    for(const ev of events) frag.appendChild(evRow(ev));
+    log.appendChild(frag);
+    lastSeq = events[events.length-1].seq;
+    const rows = log.querySelectorAll(".ev");
+    for(let i=0; i < rows.length - 2000; i++) rows[i].remove();
+    if(atBottom) log.scrollTop = log.scrollHeight;
+  }catch(e){}
+}
+async function pollState(){
+  try{ renderState(await api("/api/state")); $("uiErr").style.display = "none"; }
+  catch(e){ $("uiErr").style.display = "block"; led($("runLed"),"bad"); $("runTxt").textContent = "No contact"; }
+}
+
+$("cfgForm").addEventListener("input", ()=>setDirty(true));
+$("cfgForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const m = $("saveMsg");
+  try{
+    $("saveBtn").disabled = true;
+    const s = await api("/api/config", readForm());
+    cfg = s.config; fillForm(cfg); renderState(s);
+    m.className = "msg"; m.textContent = "Saved" + (s.status.running ? " — bridge restarted" : "");
+  }catch(err){ m.className = "msg err"; m.textContent = err.message; }
+  finally{ $("saveBtn").disabled = false; }
+});
+$("revertBtn").onclick = ()=>{ if(cfg) fillForm(cfg); };
+$("scanBtn").onclick = loadPorts;
+$("startBtn").onclick = async()=>renderState(await api("/api/start", {}));
+$("stopBtn").onclick = async()=>renderState(await api("/api/stop", {}));
+$("pauseBtn").onclick = ()=>{ paused = !paused; $("pauseBtn").textContent = paused ? "Resume" : "Pause"; };
+$("clearBtn").onclick = async()=>{ $("log").querySelectorAll(".ev").forEach(e=>e.remove()); $("logEmpty").style.display=""; };
+$("resetStats").onclick = async e=>{ e.preventDefault(); renderState(await api("/api/reset_stats", {})); };
+$("chips").onclick = e=>{
+  const b = e.target.closest(".chip"); if(!b) return;
+  filter = b.dataset.f;
+  for(const c of $("chips").children) c.classList.toggle("on", c===b);
+  applyFilter();
+};
+$("testBtn").onclick = async()=>{
+  const r = $("testRes");
+  r.className = "res"; r.textContent = "Waiting for router…";
+  try{ await api("/api/test", {dst: Number($("testDst").value)}); }
+  catch(err){ r.className = "res bad"; r.textContent = err.message; }
+};
+
+pollState(); pollEvents();
+setInterval(pollState, 1000);
+setInterval(pollEvents, 500);
+</script>
+</body>
+</html>

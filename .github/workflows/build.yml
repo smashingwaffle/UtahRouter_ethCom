@@ -1,0 +1,58 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Unit + end-to-end tests (virtual serial port)
+        run: python -m unittest discover -s tests -v
+
+  windows-exe:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Build UtahEth2RS422.exe
+        run: >
+          pyinstaller --onefile --name UtahEth2RS422
+          --add-data "utah_eth2rs422/static;utah_eth2rs422/static"
+          run_eth2rs422.py
+      - name: Smoke test the exe (web UI answers)
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\UtahEth2RS422.exe -ArgumentList "--no-browser","--stopped","--ui-port","8499" -PassThru
+          Start-Sleep -Seconds 5
+          $r = Invoke-WebRequest http://127.0.0.1:8499/api/state -UseBasicParsing
+          Stop-Process -Id $p.Id
+          if ($r.StatusCode -ne 200) { exit 1 }
+          $r.Content
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UtahEth2RS422-windows
+          path: dist/UtahEth2RS422.exe
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/UtahEth2RS422.exe

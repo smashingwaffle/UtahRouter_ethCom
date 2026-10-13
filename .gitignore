@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+*.log
+proxy_log.txt
+soak_log.txt
+.venv/
