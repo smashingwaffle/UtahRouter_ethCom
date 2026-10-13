@@ -9,7 +9,7 @@ Cerebrum ──TCP (Utah RCP-1, Ethernet)──▶ Utah eth2RS422 ──RS-422�
 
 ![Utah eth2RS422 web UI](docs/screenshot.png)
 
-Project page: https://smasher.be/tools/utah-eth2rs422/
+Project page (public download): https://smasher.be/tools/utah-eth2rs422/
 
 ## Why this exists
 
