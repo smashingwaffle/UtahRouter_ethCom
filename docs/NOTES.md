@@ -26,6 +26,7 @@ Findings from commissioning, October 2026.
   * v1 forwarded after a fixed 50 ms read wait, so replies usually arrived whole: stable.
   * v2 forwarded bytes the instant they arrived, so replies were fragmented: the drops came back.
   * v3 (this project) assembles complete reports up to US, then forwards immediately. It passes the fragmenting-router test; confirm stability on site with a soak run in Cerebrum.
+* **Takes ignored (v1.0.0):** over TCP, Cerebrum sends a take without waiting for the current poll reply to finish. The SC-40 appears to drop a command that arrives while it is still replying: status kept updating but crosspoints never changed. Since v1.1.0 the bridge sends one command at a time, holding takes until the reply is complete, then leaving a 60 ms gap after each take.
 * Conclusion: Cerebrum's Utah RCP-1 driver does not reassemble a reply that arrives across multiple reads. Worth reporting to EVS with these notes.
 
 ## Windows gotchas met along the way

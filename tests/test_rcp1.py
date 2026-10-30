@@ -32,6 +32,13 @@ class TestRcp1(unittest.TestCase):
         self.assertEqual(rcp1.describe_request(b"\x01A@003005\r", one_based=False),
                          "TAKE src 003 -> dst 005 (level 1)")
 
+    def test_extract_requests(self):
+        msgs, rest = rcp1.extract_requests(b"\x1bL001\r\x01A@003005\r\x1bL00")
+        self.assertEqual(msgs, [b"\x1bL001\r", b"\x01A@003005\r"])
+        self.assertEqual(rest, b"\x1bL00")
+        msgs, rest = rcp1.extract_requests(b"\x1bL000143")
+        self.assertEqual((msgs, rest), ([b"\x1bL000143"], b""))
+
     def test_classify(self):
         self.assertEqual(rcp1.classify_request(b"\x1bL000\r"), "poll")
         self.assertEqual(rcp1.classify_request(b"\x01A@000001\r"), "take")

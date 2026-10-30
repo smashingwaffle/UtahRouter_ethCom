@@ -35,6 +35,8 @@ class FakeSC40(threading.Thread):
         self.gap = gap
         self.matrix = {o: o for o in range(144)}
         self.stop = threading.Event()
+        self.drop_while_busy = True
+        self.dropped = 0
 
     def report(self, out: int) -> bytes:
         a = bytes([rcp1.STX]) + b"A@" + f"{self.matrix[out]:03d}{out:03d}".encode()
@@ -57,6 +59,13 @@ class FakeSC40(threading.Thread):
                     os.write(self.fd, rep[:7])
                     time.sleep(self.gap)
                     os.write(self.fd, rep[7:])
+                    # Like the real SC-40 appears to: anything that arrived while
+                    # it was busy replying is lost.
+                    if self.drop_while_busy:
+                        import select
+                        while select.select([self.fd], [], [], 0)[0]:
+                            self.dropped += len(os.read(self.fd, 64))
+                        buf = b""
                 elif buf.startswith(b"\x01") and len(buf) >= 10:
                     m = buf[:10]
                     buf = buf[10:]
@@ -123,6 +132,19 @@ class TestBridge(unittest.TestCase):
         self.assertIn("take", kinds)
         logs = list(Path(self.tmp.name).glob("eth2rs422_*.log"))
         self.assertTrue(logs and "TAKE src 005 -> dst 010" in logs[0].read_text())
+        c.close()
+
+    def test_take_sent_right_after_poll_is_not_lost(self):
+        """Cerebrum over TCP fires a take without waiting for the poll reply."""
+        c = self.connect()
+        c.sendall(b"\x1bL020\r" + b"\x01A@007020\r")   # poll + take in one segment
+        first = c.recv(4096)
+        self.assertTrue(rcp1.report_complete(first))
+        time.sleep(0.3)
+        c.sendall(b"\x1bL020\r")
+        rep = c.recv(4096)
+        self.assertEqual(rcp1.parse_report(rep)[0]["src"], 7, "take was lost")
+        self.assertEqual(self.sc40.dropped, 0)
         c.close()
 
     def test_new_client_replaces_old(self):

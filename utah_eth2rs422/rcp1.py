@@ -148,3 +148,42 @@ def report_complete(buf: bytes) -> bool:
 
 def report_has_bad_checksum(data: bytes) -> bool:
     return any(("levels" in m and not m["ok"]) for m in parse_report(data))
+
+
+def _is_digits(b: bytes) -> bool:
+    return len(b) > 0 and all(0x30 <= c <= 0x39 for c in b)
+
+
+def extract_requests(buf: bytes) -> tuple[list[bytes], bytes]:
+    """Split controller -> router bytes into individual RCP-1 messages.
+
+    Returns (complete_messages, remainder). The remainder is an incomplete
+    message waiting for more bytes. Recognised shapes:
+      ESC 'L' ddd CR      (6 bytes)  single status request
+      ESC 'L' dddddd      (8 bytes)  block status request
+      SOH l l ddd ddd t   (10 bytes) take, t = CR or checksum
+    Anything else runs until the next control code (ESC/SOH)."""
+    msgs = []
+    i = 0
+    n = len(buf)
+    while i < n:
+        c = buf[i]
+        if c == ESC:
+            if n - i < 6:
+                break
+            if buf[i + 1] == ord("L") and _is_digits(buf[i + 2:i + 5]):
+                if buf[i + 5] == CR:
+                    msgs.append(buf[i:i + 6]); i += 6; continue
+                if n - i < 8:
+                    break
+                msgs.append(buf[i:i + 8]); i += 8; continue
+        elif c == SOH:
+            if n - i < 10:
+                break
+            msgs.append(buf[i:i + 10]); i += 10; continue
+        # unknown / stray bytes: take until next control code
+        j = i + 1
+        while j < n and buf[j] not in (ESC, SOH):
+            j += 1
+        msgs.append(buf[i:j]); i = j
+    return msgs, buf[i:]

@@ -204,6 +204,8 @@ footer{color:var(--faint);font-size:12px;font-family:var(--mono);display:flex;ga
           <legend>Behaviour</legend>
           <label class="check"><input type="checkbox" id="frame_mode" name="frame_mode">
             <span>Forward complete RCP-1 reports only<small>Keeps Cerebrum's RCP-1 driver from dropping the link. Leave on.</small></span></label>
+          <label class="check"><input type="checkbox" id="pace_requests" name="pace_requests">
+            <span>One command at a time<small>Holds takes until the router has finished its current reply, so it never misses one. Leave on.</small></span></label>
           <label class="check"><input type="checkbox" id="one_based" name="one_based">
             <span>Show numbers 1-based<small>Matches Cerebrum and Utah panels (router itself is 0-based).</small></span></label>
           <label class="check"><input type="checkbox" id="autostart" name="autostart">
@@ -256,7 +258,7 @@ footer{color:var(--faint);font-size:12px;font-family:var(--mono);display:flex;ga
 const $ = id => document.getElementById(id);
 let cfg = null, dirty = false, lastSeq = 0, paused = false, filter = "all", lastState = null;
 const FIELDS = ["serial_port","baudrate","bytesize","parity","stopbits","listen_host","listen_port",
-                "frame_mode","one_based","autostart","log_detail","log_to_file"];
+                "frame_mode","pace_requests","one_based","autostart","log_detail","log_to_file"];
 const KIND_LABEL = {take:"TAKE",unsolicited:"ROUTER",poll:"poll",reply:"reply",info:"info",warn:"warn",error:"ERROR",test:"test",other:"other"};
 
 async function api(path, body){

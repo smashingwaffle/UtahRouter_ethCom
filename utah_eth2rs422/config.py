@@ -33,6 +33,9 @@ class Config:
     frame_mode: bool = True    # forward complete RCP-1 reports only (fixes Cerebrum drops)
     frame_idle_ms: int = 40    # flush partial data after this quiet gap
     frame_max_ms: int = 300    # never hold data longer than this
+    pace_requests: bool = True  # one command at a time; takes wait for the router to finish replying
+    take_gap_ms: int = 60      # quiet time after a take before the next command
+    reply_timeout_ms: int = 300  # stop waiting for a reply after this
     one_based: bool = True     # show numbers 1-based in the log (matches Cerebrum)
     log_detail: str = "normal"  # "normal" = takes/unsolicited/events, "all" = every poll
     log_to_file: bool = True

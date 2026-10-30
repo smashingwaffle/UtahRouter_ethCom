@@ -13,6 +13,7 @@ short idle gap or a hard maximum so nothing can stall.
 from __future__ import annotations
 
 import collections
+import queue
 import datetime as _dt
 import socket
 import sys
@@ -132,6 +133,9 @@ class Bridge:
         self.server_error = ""
         self._last_request = 0.0
         self._pending_since = 0.0
+        self._txq: queue.Queue = queue.Queue()
+        self._idle = threading.Event()   # set = router not busy answering
+        self._idle.set()
         self._test_pending = 0.0
         self.test_result: dict | None = None
         self.started_at: float | None = None
@@ -143,7 +147,7 @@ class Bridge:
             "polls": 0, "takes": 0, "replies": 0, "unsolicited": 0,
             "bad_checksum": 0, "fragments_joined": 0, "dropped_no_serial": 0,
             "dropped_no_client": 0, "client_connects": 0, "serial_errors": 0,
-            "bytes_to_router": 0, "bytes_from_router": 0,
+            "bytes_to_router": 0, "bytes_from_router": 0, "reply_timeouts": 0,
             "latency_ms": None, "latency_avg_ms": None,
         }
         self._poll_times: collections.deque = collections.deque(maxlen=600)
@@ -166,10 +170,14 @@ class Bridge:
         c = self.cfg
         self.events.add("info", f"Bridge started: tcp {c.listen_host}:{c.listen_port} <-> "
                                 f"{c.serial_port} {c.baudrate} {c.bytesize}{c.parity}"
-                                f"{c.stopbits:g}, frame mode {'on' if c.frame_mode else 'off'}")
+                                f"{c.stopbits:g}, frame mode {'on' if c.frame_mode else 'off'}, "
+                                f"pacing {'on' if c.pace_requests else 'off'}")
+        self._txq = queue.Queue()
+        self._idle.set()
         self._threads = [
             threading.Thread(target=self._serial_loop, name="serial", daemon=True),
             threading.Thread(target=self._server_loop, name="server", daemon=True),
+            threading.Thread(target=self._writer_loop, name="writer", daemon=True),
         ]
         for t in self._threads:
             t.start()
@@ -292,6 +300,7 @@ class Bridge:
 
     def _from_router(self, data: bytes) -> None:
         now = time.time()
+        self._idle.set()
         self.stats["bytes_from_router"] += len(data)
         one = self.cfg.one_based
 
@@ -408,7 +417,8 @@ class Bridge:
         self.events.add("info", f"Client {addr} disconnected ({why})")
 
     def _client_loop(self, conn: socket.socket) -> None:
-        one = self.cfg.one_based
+        buf = b""
+        buf_since = 0.0
         while not self._stop.is_set():
             with self._client_lock:
                 if self._client is not conn:
@@ -416,35 +426,71 @@ class Bridge:
             try:
                 data = conn.recv(4096)
             except socket.timeout:
-                continue
+                data = None
             except OSError as e:
                 self._drop_client(f"{e}", only=conn)
                 return
-            if not data:
+            if data == b"":
                 self._drop_client("closed by client", only=conn)
                 return
+            if data:
+                if not buf:
+                    buf_since = time.time()
+                buf += data
+                msgs, buf = rcp1.extract_requests(buf)
+                for m in msgs:
+                    self._txq.put(m)
+                if not buf:
+                    buf_since = 0.0
+            # flush a stuck partial message rather than hold it forever
+            if buf and time.time() - buf_since > 0.2:
+                self._txq.put(buf)
+                buf = b""
+
+    def _writer_loop(self) -> None:
+        """Send controller messages to the router one at a time."""
+        one = self.cfg.one_based
+        timeouts_logged = 0
+        while not self._stop.is_set():
+            try:
+                msg = self._txq.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            kind = rcp1.classify_request(msg)
+            if self.cfg.pace_requests:
+                if not self._idle.wait(self.cfg.reply_timeout_ms / 1000.0):
+                    self.stats["reply_timeouts"] += 1
+                    if timeouts_logged < 20 or self.stats["reply_timeouts"] % 100 == 0:
+                        timeouts_logged += 1
+                        self.events.add("warn", f"Router did not finish replying within "
+                                                f"{self.cfg.reply_timeout_ms} ms; sending next "
+                                                f"command anyway ({self.stats['reply_timeouts']} so far)")
             now = time.time()
-            kind = rcp1.classify_request(data)
-            if not self._to_router(data):
+            if kind == "poll":
+                self._idle.clear()      # router will be busy answering
+            if not self._to_router(msg):
+                self._idle.set()
                 self.stats["dropped_no_serial"] += 1
                 if self.stats["dropped_no_serial"] in (1, 10, 100) or self.stats["dropped_no_serial"] % 1000 == 0:
                     self.events.add("warn", f"Serial port not open, dropped request "
                                             f"({self.stats['dropped_no_serial']} so far)")
                 continue
             self._last_request = now
-            self._pending_since = now
-            if kind == "take":
-                self.stats["takes"] += 1
-                desc = rcp1.describe_request(data, one)
-                self.last_take = desc
-                self.events.add("take", desc, data)
-            elif kind == "poll":
+            if kind == "poll":
+                self._pending_since = now
                 self.stats["polls"] += 1
                 self._poll_times.append(now)
                 if self.cfg.log_detail == "all":
-                    self.events.add("poll", rcp1.describe_request(data, one), data)
+                    self.events.add("poll", rcp1.describe_request(msg, one), msg)
+            elif kind == "take":
+                self.stats["takes"] += 1
+                desc = rcp1.describe_request(msg, one)
+                self.last_take = desc
+                self.events.add("take", desc, msg)
+                if self.cfg.pace_requests and self.cfg.take_gap_ms > 0:
+                    self._stop.wait(self.cfg.take_gap_ms / 1000.0)
             else:
-                self.events.add("other", f"Unrecognised request: {rcp1.ascii_view(data)}", data)
+                self.events.add("other", f"Unrecognised request: {rcp1.ascii_view(msg)}", msg)
 
     # ------------------------------------------------------------- diagnostics
     def test_query(self, dst_zero_based: int = 0) -> str:

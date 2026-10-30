@@ -18,6 +18,8 @@ Connected straight to the SC-40 over a USB RS-422 adapter, Cerebrum's *Utah RCP-
 * The SC-40 and the wiring are fine: thousands of polls with zero timeouts or checksum errors.
 * The drops depend on **how the router's replies arrive**. When a reply reaches Cerebrum in several pieces (normal for USB serial adapters), the driver eventually gives up. When every reply arrives whole, the link stays green.
 
+A second problem appeared over TCP: Cerebrum sends takes without waiting for the router to finish answering a poll, and the SC-40 silently drops them. The bridge therefore also sends **one command at a time**, holding each take until the current reply is complete.
+
 The bridge waits for each complete RCP-1 report (terminated by `US`, 0x1F) and hands it to Cerebrum in one piece, immediately. Cerebrum then talks to it over TCP using the same Utah RCP-1 driver, with Router Connection set to Ethernet.
 
 ## Quick start (Windows)
