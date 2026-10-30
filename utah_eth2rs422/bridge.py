@@ -147,7 +147,7 @@ class Bridge:
             "polls": 0, "takes": 0, "replies": 0, "unsolicited": 0,
             "bad_checksum": 0, "fragments_joined": 0, "dropped_no_serial": 0,
             "dropped_no_client": 0, "client_connects": 0, "serial_errors": 0,
-            "bytes_to_router": 0, "bytes_from_router": 0, "reply_timeouts": 0,
+            "bytes_to_router": 0, "bytes_from_router": 0, "reply_timeouts": 0, "partial_reports": 0,
             "latency_ms": None, "latency_avg_ms": None,
         }
         self._poll_times: collections.deque = collections.deque(maxlen=600)
@@ -311,7 +311,11 @@ class Bridge:
             self.events.add("test", f"Test reply: {desc}", data)
             return
 
-        if rcp1.report_has_bad_checksum(data):
+        if self.cfg.frame_mode and rcp1.report_is_partial(data):
+            self.stats["partial_reports"] = self.stats.get("partial_reports", 0) + 1
+            self.events.add("warn", "Router paused mid-reply; forwarded a partial report "
+                                    f"({rcp1.describe_report(data, one)})", data)
+        elif rcp1.report_has_bad_checksum(data):
             self.stats["bad_checksum"] += 1
             self.events.add("warn", f"Bad checksum from router: {rcp1.describe_report(data, one)}", data)
 

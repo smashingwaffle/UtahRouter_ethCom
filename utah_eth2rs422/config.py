@@ -31,8 +31,8 @@ class Config:
 
     # Behaviour
     frame_mode: bool = True    # forward complete RCP-1 reports only (fixes Cerebrum drops)
-    frame_idle_ms: int = 40    # flush partial data after this quiet gap
-    frame_max_ms: int = 300    # never hold data longer than this
+    frame_idle_ms: int = 150   # flush partial data after this quiet gap (SC-40 can pause >40 ms mid-reply)
+    frame_max_ms: int = 400    # never hold data longer than this
     pace_requests: bool = True  # one command at a time; takes wait for the router to finish replying
     take_gap_ms: int = 60      # quiet time after a take before the next command
     reply_timeout_ms: int = 300  # stop waiting for a reply after this
@@ -73,6 +73,11 @@ class Config:
             except (TypeError, ValueError):
                 continue
             kwargs[k] = v
+        # upgrade values saved by v1.0.x, whose defaults were too tight for the SC-40
+        if kwargs.get("frame_idle_ms") == 40:
+            kwargs["frame_idle_ms"] = 150
+        if kwargs.get("frame_max_ms") == 300:
+            kwargs["frame_max_ms"] = 400
         cfg = cls(**kwargs)
         cfg.validate()
         return cfg

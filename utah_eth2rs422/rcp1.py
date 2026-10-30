@@ -108,8 +108,8 @@ def parse_report(data: bytes) -> list[dict]:
     msgs = []
     for chunk in data.split(bytes([STX]))[1:]:
         body = chunk.split(bytes([CR]))[0]
-        if len(body) < 8:
-            msgs.append({"ok": False, "raw": body})
+        if len(body) < 9:   # cut off before the checksum: partial, not corrupt
+            msgs.append({"ok": False, "partial": True, "raw": body})
             continue
         ck_ok = len(body) >= 9 and checksum(bytes([STX]) + body[:8]) == body[8]
         msgs.append({
@@ -128,7 +128,7 @@ def describe_report(data: bytes, one_based: bool = True) -> str:
     out = []
     for m in parse_report(data):
         if "levels" not in m:
-            out.append("partial message")
+            out.append("partial message (router paused mid-reply)")
             continue
         if m["src"] is None:
             continue  # unassigned levels, e.g. "31?"
@@ -148,6 +148,10 @@ def report_complete(buf: bytes) -> bool:
 
 def report_has_bad_checksum(data: bytes) -> bool:
     return any(("levels" in m and not m["ok"]) for m in parse_report(data))
+
+
+def report_is_partial(data: bytes) -> bool:
+    return (not report_complete(data)) or any(m.get("partial") for m in parse_report(data))
 
 
 def _is_digits(b: bytes) -> bool:
