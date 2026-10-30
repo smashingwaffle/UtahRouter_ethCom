@@ -6,8 +6,9 @@ Sends ONE take to ONE destination you choose, in two terminator styles
 (CR, then checksum), and reads the destination back after each try.
 It then puts the destination back to its original source.
 
-    python take_test.py COM5 <src> <dst>        (1-based, like Cerebrum/panels)
-    python take_test.py COM5 5 10
+    python take_test.py COM5 <src> <dst> [baud]   (1-based, like Cerebrum/panels)
+    python take_test.py COM5 5 10                 (Serial 2: 19200 8N1)
+    python take_test.py COM5 5 10 38400           (Serial 1: 38400 8N1)
 
 Pick a SPARE destination - this really switches the router.
 Stop the bridge / Cerebrum first (only one program can open the COM port).
@@ -50,12 +51,13 @@ def take(s: serial.Serial, src0: int, out0: int, style: str) -> bytes:
 
 
 def main():
-    if len(sys.argv) != 4:
+    if len(sys.argv) not in (4, 5):
         print(__doc__)
         return 2
     port, src1, dst1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
     src0, out0 = src1 - 1, dst1 - 1
-    s = serial.Serial(port, 19200, bytesize=8, parity="N", stopbits=1, timeout=0.1)
+    baud = int(sys.argv[4]) if len(sys.argv) == 5 else 19200
+    s = serial.Serial(port, baud, bytesize=8, parity="N", stopbits=1, timeout=0.1)
     with s:
         orig, raw = query(s, out0)
         if orig is None:
