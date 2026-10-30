@@ -36,6 +36,7 @@ class FakeSC40(threading.Thread):
         self.matrix = {o: o for o in range(144)}
         self.stop = threading.Event()
         self.drop_while_busy = True
+        self.accept_takes = True
         self.dropped = 0
 
     def report(self, out: int) -> bytes:
@@ -69,7 +70,8 @@ class FakeSC40(threading.Thread):
                 elif buf.startswith(b"\x01") and len(buf) >= 10:
                     m = buf[:10]
                     buf = buf[10:]
-                    self.matrix[int(m[6:9])] = int(m[3:6])
+                    if self.accept_takes:
+                        self.matrix[int(m[6:9])] = int(m[3:6])
                 elif buf and buf[0] not in (0x1B, 0x01):
                     buf = buf[1:]
                 else:
@@ -146,6 +148,40 @@ class TestBridge(unittest.TestCase):
         self.assertEqual(rcp1.parse_report(rep)[0]["src"], 7, "take was lost")
         self.assertEqual(self.sc40.dropped, 0)
         c.close()
+
+    def wait_take_test(self):
+        for _ in range(100):
+            if self.bridge.take_test and self.bridge.take_test["state"] == "done":
+                return self.bridge.take_test
+            time.sleep(0.05)
+        self.fail("take test did not finish")
+
+    def test_take_test_accepted_and_restored(self):
+        self.assertEqual(self.bridge.test_take(4, 30), "")
+        r = self.wait_take_test()
+        self.assertIn("ACCEPTS", r["verdict"])
+        self.assertEqual(self.sc40.matrix[30], 30)  # restored
+
+    def test_take_test_ignored(self):
+        self.sc40.accept_takes = False
+        self.assertEqual(self.bridge.test_take(4, 31), "")
+        r = self.wait_take_test()
+        self.assertIn("IGNORED", r["verdict"])
+
+    def test_listen_only_refuses_cerebrum_and_logs_router_text(self):
+        c = self.connect()
+        time.sleep(0.3)
+        self.bridge.set_listen_only(True)
+        time.sleep(0.3)
+        self.assertEqual(self.bridge.status()["client"], "")
+        d = self.connect()
+        time.sleep(0.4)
+        self.assertEqual(self.bridge.status()["client"], "")  # refused
+        os.write(self.master, b"BOOT: SC-40 ready\r\n")
+        time.sleep(0.5)
+        texts = [e["text"] for e in self.bridge.events.since(0) if e["kind"] == "unsolicited"]
+        self.assertTrue(any("SC-40 ready" in t for t in texts), texts)
+        c.close(); d.close()
 
     def test_new_client_replaces_old(self):
         a = self.connect()

@@ -138,6 +138,11 @@ class Bridge:
         self._idle.set()
         self._test_pending = 0.0
         self.test_result: dict | None = None
+        self.listen_only = False
+        self._sync_wait: threading.Event | None = None
+        self._sync_reply: bytes = b""
+        self.take_test: dict | None = None
+        self._refused_logged = 0.0
         self.started_at: float | None = None
         self.reset_stats()
 
@@ -304,6 +309,12 @@ class Bridge:
         self.stats["bytes_from_router"] += len(data)
         one = self.cfg.one_based
 
+        w = self._sync_wait
+        if w is not None and not w.is_set():
+            self._sync_reply = data
+            w.set()
+            return
+
         if self._test_pending and now - self._test_pending < 2.0:
             self._test_pending = 0.0
             desc = rcp1.describe_report(data, one)
@@ -388,6 +399,15 @@ class Bridge:
                     pass
 
     def _new_client(self, conn: socket.socket, addr) -> None:
+        if self.listen_only:
+            try:
+                conn.close()
+            except OSError:
+                pass
+            if time.time() - self._refused_logged > 10:
+                self._refused_logged = time.time()
+                self.events.add("info", f"Listen-only: refused connection from {addr[0]}")
+            return
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         conn.settimeout(0.2)
@@ -515,6 +535,106 @@ class Bridge:
                                 f"{dst_zero_based + 1 if self.cfg.one_based else dst_zero_based:03d}", req)
         return ""
 
+    def set_listen_only(self, on: bool) -> None:
+        """Quiet the line: disconnect Cerebrum and refuse reconnects, so anything
+        the router sends by itself shows up in the log."""
+        self.listen_only = bool(on)
+        if on:
+            self._drop_client("listen-only mode")
+            self.events.add("info", "Listen-only ON: Cerebrum disconnected; showing only what the "
+                                    "router sends by itself")
+        else:
+            self.events.add("info", "Listen-only OFF: Cerebrum may reconnect")
+
+    def _query_sync(self, dst0: int, timeout: float = 1.0):
+        """Ask the router for one destination and wait for the reply.
+        Returns (level-1 source, zero-based or None, raw reply bytes)."""
+        self._idle.wait(0.3)
+        ev = threading.Event()
+        self._sync_reply = b""
+        self._sync_wait = ev
+        req = bytes([rcp1.ESC]) + b"L" + f"{dst0:03d}".encode() + bytes([rcp1.CR])
+        try:
+            if not self._to_router(req):
+                return None, b""
+            ev.wait(timeout)
+        finally:
+            self._sync_wait = None
+        raw = self._sync_reply
+        for m in rcp1.parse_report(raw):
+            if "levels" in m and 1 in m["levels"]:
+                return m["src"], raw
+        return None, raw
+
+    def _take_sync(self, src0: int, dst0: int, style: str) -> bytes:
+        body = bytes([rcp1.SOH]) + b"A@" + f"{src0:03d}{dst0:03d}".encode()
+        msg = body + (bytes([rcp1.CR]) if style == "CR" else bytes([rcp1.checksum(body)]))
+        self._to_router(msg)
+        return msg
+
+    def test_take(self, src0: int, dst0: int) -> str:
+        """Diagnostic: take src->dst directly (CR, then checksum style), read back,
+        then restore. Only while Cerebrum is not connected."""
+        if not self.running or not self.serial_ok:
+            return "Serial port is not open"
+        with self._client_lock:
+            if self._client is not None:
+                return "Cerebrum is connected; turn on Listen only first"
+        if self.take_test and self.take_test.get("state") == "running":
+            return "A test is already running"
+        self.take_test = {"state": "running", "lines": [], "verdict": ""}
+        threading.Thread(target=self._run_take_test, args=(src0, dst0), daemon=True).start()
+        return ""
+
+    def _run_take_test(self, src0: int, dst0: int) -> None:
+        one = self.cfg.one_based
+        n = (lambda x: "---" if x is None else f"{x + 1 if one else x:03d}")
+        res = self.take_test
+        def line(t, data=None):
+            res["lines"].append(t)
+            self.events.add("test", t, data)
+        try:
+            orig, raw = self._query_sync(dst0)
+            if orig is None:
+                line(f"No status for dst {n(dst0)} (reply: {rcp1.hexdump(raw) or 'none'})")
+                res["verdict"] = "Router did not answer the status request."
+                return
+            line(f"dst {n(dst0)} is on src {n(orig)}")
+            if orig == src0:
+                res["verdict"] = "Already on that source. Pick a different source to test."
+                return
+            accepted = None
+            for style in ("CR", "checksum"):
+                msg = self._take_sync(src0, dst0, style)
+                time.sleep(0.4)
+                now, _ = self._query_sync(dst0)
+                ok = now == src0
+                line(f"Take src {n(src0)} -> dst {n(dst0)} ({style} terminator): "
+                     f"dst now on src {n(now)} - {'ACCEPTED' if ok else 'ignored'}", msg)
+                if ok:
+                    accepted = style
+                    break
+            # restore
+            for style in ("CR", "checksum"):
+                self._take_sync(orig, dst0, style)
+                time.sleep(0.4)
+                back, _ = self._query_sync(dst0)
+                if back == orig:
+                    break
+            line(f"Restored dst {n(dst0)} to src {n(orig)}: {'yes' if back == orig else 'NO - restore it from a panel'}")
+            if accepted == "CR":
+                res["verdict"] = "Router ACCEPTS takes (Cerebrum's CR format works)."
+            elif accepted == "checksum":
+                res["verdict"] = "Router only accepts takes ending in a CHECKSUM."
+            else:
+                res["verdict"] = ("Router IGNORED both. Destination locked/protected, the port lacks "
+                                  "switching rights, or this card is the standby card.")
+        except Exception as e:  # never kill the bridge over a diagnostic
+            res["verdict"] = f"Test failed: {e}"
+        finally:
+            res["state"] = "done"
+            self.events.add("test", f"Take test result: {res['verdict']}")
+
     # ------------------------------------------------------------------ status
     def status(self) -> dict:
         with self._client_lock:
@@ -537,4 +657,6 @@ class Bridge:
             "last_take": self.last_take,
             "stats": dict(self.stats),
             "test": test,
+            "listen_only": self.listen_only,
+            "take_test": self.take_test,
         }

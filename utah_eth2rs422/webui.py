@@ -150,6 +150,17 @@ def make_handler(app: App):
                 elif u.path == "/api/clear_log":
                     app.events.clear()
                     self._json(app.state())
+                elif u.path == "/api/listen_only":
+                    app.bridge.set_listen_only(bool(self._body().get("on")))
+                    self._json(app.state())
+                elif u.path == "/api/test_take":
+                    b = self._body()
+                    src, dst = int(b.get("src", 1)), int(b.get("dst", 1))
+                    off = 1 if app.cfg.one_based else 0
+                    if min(src, dst) - off < 0:
+                        raise ValueError("source/destination out of range")
+                    err = app.bridge.test_take(src - off, dst - off)
+                    self._json({"error": err} if err else {"ok": True}, 400 if err else 200)
                 elif u.path == "/api/test":
                     dst = int(self._body().get("dst", 1))
                     zero = dst - 1 if app.cfg.one_based else dst
